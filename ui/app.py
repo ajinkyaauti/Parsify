@@ -1,13 +1,29 @@
+
 import io
 import json
 import os
+import sys
 import tempfile
 import html
+
+# Add project root before importing project modules
+PROJECT_ROOT = os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))
+)
+
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 import streamlit as st
 from extractor import rule_based, llm_extractor, ats_scorer
 
-st.set_page_config(page_title="Parsify", page_icon="📄", layout="wide")
+st.set_page_config(
+    page_title="Parsify",
+    page_icon="📄",
+    layout="wide"
+)
+
+# st.set_page_config(page_title="Parsify", page_icon="📄", layout="wide")
 
 # API keys are deliberately supplied per request. No environment-key fallback.
 if "page" not in st.session_state:
