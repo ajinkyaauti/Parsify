@@ -100,6 +100,14 @@ Open `.env` and replace `your_key_here` with your key. Get a free key at [aistud
 
 ## Running
 
+
+
+**[🚀 Live Demo]**  (https://parsify.streamlit.app/)
+
+
+
+
+
 **Streamlit UI**
 
 ```bash
