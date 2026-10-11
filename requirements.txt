@@ -1,0 +1,13 @@
+paddlepaddle
+paddleocr
+pdf2image
+Pillow
+fastapi
+uvicorn
+python-multipart
+streamlit
+google-genai
+python-dotenv
+numpy
+pymupdf
+reportlab
