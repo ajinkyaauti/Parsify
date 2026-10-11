@@ -1,20 +1,24 @@
-import os
+"""Gemini document extraction for Parsify.
+
+Every Gemini operation requires the API key supplied by the current user.
+This module deliberately does not load .env or read GEMINI_API_KEY.
+"""
 import json
 import re
-from dotenv import load_dotenv
+import time
 from google import genai
-
 from ocr.reader import read_image
 
-load_dotenv()
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+MODEL_NAME = "gemini-3.8-flash"
 
 
-def build_prompt(ocr_text):
-    """
-    Build the prompt we send to Gemini.
-    Generic — works for any document type, not just invoices.
-    """
+def _get_client(api_key):
+    if not isinstance(api_key, str) or not api_key.strip():
+        raise ValueError("A Gemini API key is required. Enter your key in the Parsify sidebar.")
+    return genai.Client(api_key=api_key.strip())
+
+
+def _build_prompt(ocr_text):
     return f"""You are a document extraction assistant.
 
 Step 1: Identify what type of document this is (invoice, medical bill, resume, bank statement, contract, etc.)
@@ -31,52 +35,7 @@ Document text:
 """
 
 
-def extract(image_path):
-    """
-    Extract structured fields from a document image using Gemini.
-
-    Steps:
-      1. Run OCR to get raw text
-      2. Join all text blocks into one string
-      3. Send to Gemini with extraction prompt
-      4. Parse the JSON response
-    """
-    # Step 1 — get raw text blocks from OCR
-    blocks = read_image(image_path)
-
-    # Step 2 — join into a single plain text string
-    ocr_text = "\n".join(block["text"] for block in blocks)
-
-    # Step 3 — send to Gemini (retry up to 3 times on 503)
-    import time
-    prompt = build_prompt(ocr_text)
-    for attempt in range(3):
-        try:
-            response = client.models.generate_content(
-                model="gemini-3.8-flash",
-                contents=prompt,
-            )
-            break
-        except Exception as e:
-            if "503" in str(e) and attempt < 2:
-                time.sleep(3)
-            else:
-                raise
-    raw = response.text.strip()
-
-    # Step 4 — parse JSON (strip markdown code fences if Gemini adds them)
-    raw = re.sub(r'^```(?:json)?\s*', '', raw)
-    raw = re.sub(r'\s*```$', '', raw)
-
-    try:
-        result = json.loads(raw)
-    except json.JSONDecodeError:
-        result = {"error": "Could not parse Gemini response", "raw": raw}
-
-    return result
-
-
-def build_validate_prompt(ocr_text, rule_result):
+def _build_validate_prompt(ocr_text, rule_result):
     return f"""You are an invoice data validator.
 
 Below is raw OCR text from an invoice, and a JSON extracted by a rule-based system.
@@ -94,46 +53,57 @@ RAW OCR TEXT:
 {ocr_text}
 
 RULE-BASED OUTPUT TO VALIDATE:
-{json.dumps(rule_result, indent=2)}
+{json.dumps(rule_result, indent=2, ensure_ascii=False)}
 """
 
 
-def validate(rule_result, image_path):
-    """
-    Pass rule-based extraction result through Gemini for validation and correction.
-    Returns a cleaned, corrected version of the same dict.
-    """
-    import time
-    blocks = read_image(image_path)
-    ocr_text = "\n".join(block["text"] for block in blocks)
-    prompt = build_validate_prompt(ocr_text, rule_result)
-
+def _generate_json(prompt, api_key, fallback=None):
+    client = _get_client(api_key)
     for attempt in range(3):
         try:
             response = client.models.generate_content(
-                model="gemini-3.8-flash",
+                model=MODEL_NAME,
                 contents=prompt,
             )
             break
-        except Exception as e:
-            if "503" in str(e) and attempt < 2:
+        except Exception as exc:
+            if "503" in str(exc) and attempt < 2:
                 time.sleep(3)
             else:
+                # Do not include the API key in logs or user-facing messages.
                 raise
 
-    raw = response.text.strip()
-    raw = re.sub(r'^```(?:json)?\s*', '', raw)
-    raw = re.sub(r'\s*```$', '', raw)
-
+    raw = (getattr(response, "text", None) or "").strip()
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
     try:
         result = json.loads(raw)
+        if not isinstance(result, dict):
+            raise json.JSONDecodeError("Expected JSON object", raw, 0)
+        return result
     except json.JSONDecodeError:
-        result = rule_result  # if validation fails, return original
+        if fallback is not None:
+            return fallback
+        return {"error": "Could not parse Gemini response", "raw": raw}
 
-    return result
+
+def extract(image_path, api_key=None):
+    """Extract structured document fields using the caller-provided Gemini key."""
+    blocks = read_image(image_path)
+    ocr_text = "\n".join(block.get("text", "") for block in blocks)
+    return _generate_json(_build_prompt(ocr_text), api_key)
 
 
-# ---- TEST IT ----
+def validate(rule_result, image_path, api_key=None):
+    """Validate a rule-based result using the caller-provided Gemini key."""
+    blocks = read_image(image_path)
+    ocr_text = "\n".join(block.get("text", "") for block in blocks)
+    prompt = _build_validate_prompt(ocr_text, rule_result)
+    return _generate_json(prompt, api_key, fallback=rule_result)
+
+
 if __name__ == "__main__":
-    result = extract("samples/iv.png")
-    print(json.dumps(result, indent=2))
+    import getpass
+    key = getpass.getpass("Enter your Gemini API key: ").strip()
+    result = extract("samples/iv.png", api_key=key)
+    print(json.dumps(result, indent=2, ensure_ascii=False))
