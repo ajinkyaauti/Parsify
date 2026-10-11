@@ -9,6 +9,5 @@ python-dotenv
 numpy
 pymupdf
 reportlab
---extra-index-url https://www.paddlepaddle.org.cn/packages/stable/cpu/
 paddlepaddle==3.2.0
 paddleocr
