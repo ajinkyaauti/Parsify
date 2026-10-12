@@ -102,7 +102,7 @@ Open `.env` and replace `your_key_here` with your key. Get a free key at [aistud
 
 
 
-**[🚀 Live Demo]**  (https://parsify.streamlit.app/)
+[🚀 Live Demo](https://parsify.streamlit.app/)
 
 
 
